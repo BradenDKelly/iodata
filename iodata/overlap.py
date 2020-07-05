@@ -68,7 +68,7 @@ def compute_overlap(obasis: MolecularBasis, atcoords: np.ndarray) -> np.ndarray:
 
     n_max = np.max([np.max(shell.angmoms) for shell in obasis.shells])
     go = GaussianOverlap(n_max)
-
+    oneD = np.frompyfunc(go.compute_overlap_gaussian_1d,6,1)
     # Loop over shell0
     begin0 = 0
     count = 0
@@ -106,7 +106,8 @@ def compute_overlap(obasis: MolecularBasis, atcoords: np.ndarray) -> np.ndarray:
 
                         for s0, n0, in enumerate(iter_cart_alphabet(shell0.angmoms[0])):
                             for s1, n1, in enumerate(iter_cart_alphabet(shell1.angmoms[0])):
-                                v = go.compute_overlap_gaussian_3d(r0, r1, a0, a1, n0, n1)
+                                #v = go.compute_overlap_gaussian_3d(r0, r1, a0, a1, n0, n1)
+                                v = np.prod(oneD(r0, r1, a0, a1, n0, n1))
                                 v *= cc0 * cc1 * scales0[s0] * scales1[s1]
                                 result[s0, s1] += v
             # END of Cartesian coordinate system (if going to pure coordinates)
@@ -154,6 +155,7 @@ class GaussianOverlap():
         pf = np.exp(-a1 * a2 * (x1 - x2) ** 2 / at)
         x1 = xn - x1
         x2 = xn - x2
+        two_at = 2 * at
         # compute overlap
         value = 0
 
@@ -162,7 +164,7 @@ class GaussianOverlap():
             for j in range(n2 + 1):
                 m = i + j
                 if m % 2 == 0:
-                    integ = self.facts[i + j - 1 + 1] / (2 * at) ** (m / 2)
+                    integ = self.facts[m] / (two_at) ** (m / 2)
                     value += pf_i * self.binomials[n2][j] * x2 ** (n2 - j) * integ
         value *= pf * np.sqrt(np.pi / at)
         return value

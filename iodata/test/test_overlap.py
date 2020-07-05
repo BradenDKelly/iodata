@@ -88,6 +88,19 @@ def test_overlap_l1():
         _ = compute_overlap(dbasis, atcoords)
 
 
+def test_molden_big():
+    from timeit import default_timer as tm
+    t1 = tm()
+    with path('iodata.test.data', 'big.molden') as fn_fchk:
+        data = load_one(fn_fchk)
+    obasis = data.obasis._replace(conventions=OVERLAP_CONVENTIONS)
+    t2 = tm()
+    s1 = tm()
+    overlap = compute_overlap(obasis, data.atcoords)
+    e1 = tm()
+    print("Molden took {}, prep took {}".format(e1-s1, t2-t1))
+    print(atoms)
+
 # def test_overlap_matrix_big():
 #     import time
 #     # load overlap and atomic basis data (s, p & pure d shells)
