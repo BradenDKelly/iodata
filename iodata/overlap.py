@@ -150,6 +150,7 @@ class GaussianOverlap():
         """Compute overlap integral of two Gaussian functions in one-dimensions."""
         # compute total exponent and new x
         at = a1 + a2
+        two_at = 2 * at
         xn = (a1 * x1 + a2 * x2) / at
         pf = np.exp(-a1 * a2 * (x1 - x2) ** 2 / at)
         x1 = xn - x1
@@ -162,7 +163,7 @@ class GaussianOverlap():
             for j in range(n2 + 1):
                 m = i + j
                 if m % 2 == 0:
-                    integ = self.facts[i + j - 1 + 1] / (2 * at) ** (m / 2)
+                    integ = self.facts[m] / (two_at) ** (m / 2)
                     value += pf_i * self.binomials[n2][j] * x2 ** (n2 - j) * integ
         value *= pf * np.sqrt(np.pi / at)
         return value
