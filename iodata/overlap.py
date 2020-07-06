@@ -18,7 +18,7 @@
 # --
 """Module for computing overlap of atomic orbital basis functions."""
 
-
+import numba as nb
 import numpy as np
 from scipy.special import binom, factorial2
 
@@ -150,20 +150,16 @@ class GaussianOverlap():
         """Compute overlap integral of two Gaussian functions in one-dimensions."""
         # compute total exponent and new x
         at = a1 + a2
+        two_at = 2 * at
         xn = (a1 * x1 + a2 * x2) / at
         pf = np.exp(-a1 * a2 * (x1 - x2) ** 2 / at)
         x1 = xn - x1
         x2 = xn - x2
         # compute overlap
-        value = 0
-
-        for i in range(n1 + 1):
-            pf_i = self.binomials[n1][i] * x1 ** (n1 - i)
-            for j in range(n2 + 1):
-                m = i + j
-                if m % 2 == 0:
-                    integ = self.facts[i + j - 1 + 1] / (2 * at) ** (m / 2)
-                    value += pf_i * self.binomials[n2][j] * x2 ** (n2 - j) * integ
+        value = speed_oneD(np.array(self.binomials[n1]),
+                           np.array(self.binomials[n2]),
+                           self.facts,
+                           n1, n2, x1, x2, two_at)
         value *= pf * np.sqrt(np.pi / at)
         return value
 
@@ -213,3 +209,18 @@ def gob_cart_normalization(alpha: np.ndarray, n: np.ndarray) -> np.ndarray:
     vfac2 = np.vectorize(factorial2)
     return np.sqrt((4 * alpha)**sum(n) * (2 * alpha / np.pi)**1.5
                    / np.prod(vfac2(2 * n - 1)))
+
+
+@nb.jit()
+def speed_oneD(binom1, binom2, facts, n1, n2, x1, x2, two_at):
+    """Compute overlap integral of two gaussians using JIT compilation."""
+
+    value = 0
+    for i in range(n1 + 1):
+        pf_i = binom1[i] * x1 ** (n1 - i)
+        for j in range(n2 + 1):
+            m = i + j
+            if m % 2 == 0:
+                integ = facts[m] / (two_at) ** (m / 2)  # self.facts[m] / (two_at) ** (m / 2)
+                value += pf_i * binom2[j] * x2 ** (n2 - j) * integ
+    return value
