@@ -93,8 +93,9 @@ def test_molden_big():
     t1 = tm()
     with path('iodata.test.data', 'big.molden') as fn_fchk:
         data = load_one(fn_fchk)
-    obasis = data.obasis._replace(conventions=OVERLAP_CONVENTIONS)
     t2 = tm()
+    obasis = data.obasis._replace(conventions=OVERLAP_CONVENTIONS)
+
     s1 = tm()
     overlap = compute_overlap(obasis, data.atcoords)
     e1 = tm()
