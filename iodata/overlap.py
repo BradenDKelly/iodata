@@ -106,8 +106,8 @@ def compute_overlap(obasis: MolecularBasis, atcoords: np.ndarray) -> np.ndarray:
 
                         for s0, n0, in enumerate(iter_cart_alphabet(shell0.angmoms[0])):
                             for s1, n1, in enumerate(iter_cart_alphabet(shell1.angmoms[0])):
-                                #v = go.compute_overlap_gaussian_3d(r0, r1, a0, a1, n0, n1)
-                                v = np.prod(oneD(r0, r1, a0, a1, n0, n1))
+                                v = go.compute_overlap_gaussian_3d(r0, r1, a0, a1, n0, n1)
+                                #v = np.prod(oneD(r0, r1, a0, a1, n0, n1))
                                 v *= cc0 * cc1 * scales0[s0] * scales1[s1]
                                 result[s0, s1] += v
             # END of Cartesian coordinate system (if going to pure coordinates)
@@ -148,7 +148,16 @@ class GaussianOverlap():
         return value
 
     def compute_overlap_gaussian_1d(self, x1, x2, a1, a2, n1, n2):
-        """Compute overlap integral of two Gaussian functions in one-dimensions."""
+        """Compute overlap integral of two Gaussian functions in one-dimensions.
+
+        Rather than using a double for loop, this creates a matrix with the goal
+        of making use of matrix vector operations in numpy and then summing
+        all elements at the end to get the final value to return
+
+        This broadcasted solution is terribly slow. ~3 times slower than using for loops.
+
+        The loops/arrays/matrices are simply too small to be of use for numpy.
+        """
         # compute total exponent and new x
         at = a1 + a2
         xn = (a1 * x1 + a2 * x2) / at
@@ -157,16 +166,27 @@ class GaussianOverlap():
         x2 = xn - x2
         two_at = 2 * at
         # compute overlap
-        value = 0
 
-        for i in range(n1 + 1):
-            pf_i = self.binomials[n1][i] * x1 ** (n1 - i)
-            for j in range(n2 + 1):
-                m = i + j
-                if m % 2 == 0:
-                    integ = self.facts[m] / (two_at) ** (m / 2)
-                    value += pf_i * self.binomials[n2][j] * x2 ** (n2 - j) * integ
-        value *= pf * np.sqrt(np.pi / at)
+        #matrix = np.zeros((n1+1,n2+1))
+        facts = [[self.facts[i + j] for i in range(n2+1)] for j in range(n1+1)]
+
+        # prep arrays constants raised to powers for matrix multiplication later
+        pfi = np.power(x1,n1 - np.arange(n1+1))
+        pfj = np.power(x2,n2 - np.arange(n2+1))
+
+        # send arrays of all i and j indices, "broadcast" to create initial matrix
+        def for_loops(i, j):
+            m = i + j
+            return np.where(m % 2 == 0, 1 / (two_at) ** (m / 2), 0)
+
+        # initialize matrix via broadcasting
+        matrix = for_loops(np.arange(n1+1)[:,None], np.arange(n2+1))
+
+        # numpy matrix vector algebra to add in binomial factors
+        matrix = np.multiply(facts, matrix) * np.array(self.binomials[n1])[:, None]\
+                 * np.array(self.binomials[n2])[None, :] * pfi[:, None] * pfj[None, :]
+
+        value = np.sum(matrix) * pf * np.sqrt(np.pi / at)
         return value
 
 
