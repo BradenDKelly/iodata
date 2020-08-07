@@ -24,7 +24,7 @@ import numpy as np
 from numpy.testing import assert_equal, assert_allclose
 
 from .common import compute_mulliken_charges, check_orthonormal
-from ..api import load_one
+from ..api import load_one, dump_one
 from ..formats.mwfn import load_mwfn_low
 from ..overlap import compute_overlap
 from ..utils import LineIterator
@@ -185,3 +185,20 @@ def test_load_mwfn_low_h20_uks():
     fn_mwfn = 'h2o_uks.mwfn'
     with path('iodata.test.data', fn_mwfn) as file_mwfn:
         mol = load_one(str(file_mwfn))
+
+def test_dump_one():
+    fn_mwfn = 'h2o_uks.mwfn'
+    with path('iodata.test.data', fn_mwfn) as file_mwfn:
+        mol = load_one(str(file_mwfn))
+    fn_tmp = 'test.mwfn'
+    dump_one(mol, fn_tmp)
+    print(atom)
+
+
+def test_dump_one_wfn_to_mwfn():
+    fn_mwfn = 'h2o_sto3g.wfn'
+    with path('iodata.test.data', fn_mwfn) as file_mwfn:
+        mol = load_one(str(file_mwfn))
+    fn_tmp = 'test.mwfn'
+    dump_one(mol, fn_tmp)
+    print(atom)

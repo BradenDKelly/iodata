@@ -17,13 +17,15 @@
 # along with this program; if not, see <http://www.gnu.org/licenses/>
 # --
 
-from typing import Tuple, List
+from typing import Tuple, List, TextIO, Iterator
 
 import numpy as np
 
 from ..basis import HORTON2_CONVENTIONS, MolecularBasis, Shell
-from ..docstrings import document_load_one
+from ..docstrings import document_load_one, document_dump_one
+from ..iodata import IOData
 from ..orbitals import MolecularOrbitals
+from ..periodic import num2sym
 from ..utils import LineIterator
 
 __all__ = []
@@ -89,7 +91,7 @@ def _load_helper_opener(lit: LineIterator) -> float:
             if name in line:
                 d[name] = line.split('=')[1].strip()
                 count += 1
-
+    print(float(d['VT_ratio']))
     return int(d['Wfntype']), float(d['Charge']), float(d['Naelec']), float(d['Nbelec']), \
            float(d['E_tot']), float(d['VT_ratio']), int(d['Ncenter'])
 
@@ -252,7 +254,7 @@ def load_mwfn_low(lit: LineIterator) -> dict:
             'nelec_a': nelec_a, 'nelec_b': nelec_b, 'charge': charge,
             'atnums': atnums, 'atcoords': atcoords, 'atcorenums': atcorenums,
             'nbasis': nbasis, 'nindbasis': nindbasis, 'nprims': nprim, 'nshells': nshell,
-            'nprimshells': nprimshell,
+            'nprimshells': nprimshell, 'full_virial_ratio': vt_ratio,
             'shell_centers': shell_centers, 'shell_types': shell_types, 'prim_per_shell': prim_per_shell,
             'exponents': exponent, 'coeffs': coeffs,
             'mo_numbers': mo_numbers, 'mo_occs': mo_occs, 'mo_energies': mo_energies,
@@ -321,7 +323,7 @@ def load_one(lit: LineIterator) -> dict:
                  'nbasis': inp['nbasis'], 'nindbasis': inp['nindbasis'], 'nprims': inp['nprims'],
                  'nshells': inp['nshells'], 'nprimshells': inp['nprimshells'],
                  'shell_types': inp['shell_types'], 'shell_centers': inp['shell_centers'],
-                 'prim_per_shell': inp['prim_per_shell']}
+                 'prim_per_shell': inp['prim_per_shell'], 'full_virial_ratio': inp['full_virial_ratio']}
 
     # Unlike WFN, MWFN does include orbital expansion coefficients.
     obasis = build_obasis(inp['shell_centers'],
@@ -342,7 +344,7 @@ def load_one(lit: LineIterator) -> dict:
     elif wfntype in [1, 4]:
         restrictions = "unrestricted"
     else:
-        exit("No wfntype found, cannot determine if restricted or unrestricted wave function.")
+        raise IOError('No wfntype found, cannot determine if restricted or unrestricted wave function.')
     # MFWN provides number of alpha and beta electrons, this is a double check
     # mo_type (integer, scalar): Orbital type
     #     0: Alpha + Beta (i.e. spatial orbital)
@@ -372,3 +374,188 @@ def load_one(lit: LineIterator) -> dict:
         'energy': inp['energy'],
         'extra': mwfn_dict,
     }
+
+def format_output(string, value, f, format="norm"):
+
+    if np.dtype(value) == float:
+        if format == "norm":
+            print(str("{:10s}".format(string)) + str("{:15.6f}".format(value)), file=f)
+        else:
+            print(str("{:10s}".format(string)) + str("{:15.6e}".format(value)), file=f)
+    elif np.dtype(value) == int:
+        print("{:10s}".format(string) + "{:15d}".format(value), file=f)
+    elif np.dtype(value) == str:
+        print("{:10s}".format(string) + "{:15s}".format(value), file=f)
+    elif value is None:
+        IOError('Float, integer or string is required as formatted output.')
+    #
+    # print('{:10s} {}'.format('Charge=', data.charge or '?'), file=f)
+
+
+def format_output_from_dict(word, value, obj, f):
+    if obj.extra.get(value) is not None:
+        print('{:12s} {:15d}'.format(word, obj.extra.get(value)), file=f)
+    else:
+        print('{:12s} {:15s}'.format(word, '?'), file=f)
+
+
+def dump_mwfn_basis(basis, f):
+    if basis.extra.get('nbasis') is not None:
+        print('{:12s} {:15d}'.format('Nbasis=', basis.extra.get('nbasis')), file=f)
+    elif basis.obasis.nbasis is not None:
+        print('{:12s} {:15d}'.format('Nbasis=', basis.obasis.nbasis), file=f)
+    else:
+        print('{:12s} {:15s}'.format('Nbasis=', ' ? '), file=f)
+
+    if basis.extra.get('nindbasis') is not None:
+        print('{:12s} {:15d}'.format('Nindbasis=', basis.extra.get('nindbasis')), file=f)
+    elif basis.obasis.nbasis is not None:
+        print('{:12s} {:15d}'.format('Nindbasis=', basis.obasis.nbasis), file=f)
+    else:
+        print('{:12s} {:15s}'.format('Nindbasis=', ' ? '), file=f)
+
+    if basis.extra.get('nprims') is not None:
+        print('{:12s} {:15d}'.format('Nprims=', basis.extra.get('nprims')), file=f)
+    else:
+        print('{:12s} {:15s}'.format('Nprims=', ' ? '), file=f)
+
+    print('{:12s} {:15d}'.format('Nshell=', len(basis.obasis.shells)), file=f)
+    nprimshell = len([exps for shell in basis.obasis.shells for exps in shell])
+    print('{:12s} {:15d}'.format('Nprimshell=', nprimshell), file=f)
+
+
+@document_dump_one("MWFN", ['atcoords', 'atnums', 'atcorenums', 'mo', 'obasis', 'charge'],
+                   ['title', 'energy', 'spinpol', 'lot', 'atgradient', 'extra'])
+def dump_one(f: TextIO, data: IOData):
+    """Do not edit this docstring. It will be overwritten."""
+    line_length_cutoff = 78
+    print(data.title + str(" (Created with IODATA)") or 'Created with IOData', file=f)
+    print('{:10s} {}'.format('Charge=', data.charge), file=f)
+    if data.extra.get('nelec_a') is not None:
+        print('{:10s} {}'.format('Naelec=', data.extra['nelec_a']), file=f)
+    else:
+        print('{:10s} {}'.format('nelec_b', float(data.mo.norba)), file=f)
+    if data.extra.get('Nbelec=') is not None:
+        print('{:10s} {}'.format('Nbelec=', data.extra['nelec_b']), file=f)
+    else:
+        print('{:10s} {}'.format('Nbelec=', float(data.mo.norbb)), file=f)
+    print('{:10s} {:15.8e}'.format('E_tot=', data.energy or '?'), file=f)
+    if data.extra.get("full_virial_ratio") is not None:
+        print('{:10s} {:15.8f}\n'.format('VT_ratio=', data.extra.get("full_virial_ratio")) or '?', file=f)
+    else:
+        print('{:10s} {:15s}\n'.format('VT_ratio=', '?'), file=f)
+
+    print('# Atom information', file=f)
+    print('{:10s} {:5d}'.format('Ncenter=', data.natom or '?'), file=f)
+    print('# {}{}{}{:8}   {:8}   {:8}    {}'.format("|idx|", "sym|","num|", "nuc.chge|", "x coord    |", "y coord    |", "z coord    |"), file=f)
+    for i in range(data.natom):
+        num = data.atnums[i]
+        sym = num2sym[num]
+        nuc_chge = float(num)
+        x, y, z = data.atcoords[i,0], data.atcoords[i,1], data.atcoords[i,2]
+        print('{:>6d} {:2s} {:3} {:5} {:15.8f} {:15.8f} {:15.8f}'.format(i, sym, num, nuc_chge, x, y, z), file=f)
+
+    if data.extra.get('nindbasis') is None:
+        print('# Basis function information (IODATA has assumed Nbasis = Nindbasis)', file=f)
+    else:
+        print('# Basis function information', file=f)
+
+    dump_mwfn_basis(data, f)
+
+    print('$Shell types', file=f)
+    try:
+        string = '  '
+        for shell_type in data.extra['shell_types']:
+            string += str(shell_type) + str("  ")
+            if len(string) > line_length_cutoff:
+                print(string, file=f)
+                string = '  '
+        print(string, file=f)
+        print('$Shell centers', file=f)
+        string = '  '
+        for center in data.extra['shell_centers']:
+            string += str(center + 1) + str("  ")
+            if len(string) > line_length_cutoff:
+                print(string, file=f)
+                string = '  '
+        print(string, file=f)
+        print('$Shell contraction degrees', file=f)
+        string = '  '
+        for prim in data.extra['prim_per_shell']:
+            string += str(prim) + str("  ")
+            if len(string) > line_length_cutoff:
+                print(string, file=f)
+                string = '  '
+        print(string, file=f)
+    except:
+        print("Shell information not implemented currently", file=f)
+
+    # Get exponents and contraction coefficients
+    if data.obasis is None:
+        raise IOError('A Gaussian orbital basis is required to write a MWFN file.')
+    obasis = data.obasis
+    exponent_list = []
+    coeffs_list = []
+    for shell in obasis.shells:
+        for expi, coeff in zip(shell.exponents, shell.coeffs):
+            exponent_list.append("{:e}".format(float(expi)))
+            coeffs_list.append("{:e}".format(float(coeff)))
+    if data.extra.get("nprimshells") is not None:
+        number_primitive_shells = data.extra.get("nprimshells")
+        assert len(exponent_list) == number_primitive_shells
+        assert len(coeffs_list) == number_primitive_shells
+
+    print('$Primitive exponents', file=f)
+    # modify line length so limit is 5 items per row. Not necessary, but, mwfn does this.
+    line_length_cutoff = 70
+    string = '  '
+    for expi in exponent_list:
+        string += str(expi) + str("  ")
+        if len(string) > line_length_cutoff:
+            print(string, file=f)
+            string = '  '
+    print(string, file=f)
+    print('$Contraction coefficients', file=f)
+    string = '  '
+    for coeff in coeffs_list:
+        string += str(coeff) + str("  ")
+        if len(string) > line_length_cutoff:
+            print(string, file=f)
+            string = '  '
+    print(string, file=f)
+
+    # Output molecular orbital information.
+    print('\n# Orbital information (nindbasis orbitals)', file=f)
+    if np.allclose(np.array(coeffs_list, dtype=float), np.ones(len(coeffs_list))):
+        print('# Input file did not include contraction coefficients.', file=f)
+        print('# IODATA has normalized the molecular orbitals to account for this.\n', file=f)
+    else:
+        # output blank line
+        print('  ', file=f)
+    default = [None for i in range(data.mo.norb)]
+    if data.extra.get('mo_sym') is not None:
+        syms = data.extra.get('mo_sym')
+    else:
+        syms = np.repeat('?', data.mo.norb)
+    if data.extra.get('mo_type') is not None:
+        mo_types = data.extra.get('mo_type')
+    elif int(data.mo.norba + data.mo.norbb) == int(2 * data.mo.norb):
+        mo_types = np.zeros((data.mo.norb), dtype=int) #[0 for i in range(data.mo.norb)]
+    else:
+        mo_types = default
+    for i in range(data.mo.norb):
+        print('{:10s} {:6d}'.format('Index=', i + 1), file=f)
+        print('{:10s} {:6}'.format('Type=', mo_types[i]), file=f)
+        # print('{:10s} {:6d}'.format('Type=', mo_types[i] or '?'), file=f)
+        print('{:10s} {:8e}'.format('Energy=', data.mo.energies[i]), file=f)
+        print('{:10s} {:15.6f}'.format('Occ=', data.mo.occs[i]), file=f)
+        print('{:10s} {:}'.format('Sym=', syms[i]), file=f)
+        string = '  '
+        print(data.mo.coeffs.shape)
+        for mo in data.mo.coeffs[:, i]: #data.mo.coeffs[i]:
+            string += str("{:e}".format(mo)) + str("  ")
+            if len(string) > line_length_cutoff:
+                print(string, file=f)
+                string = '  '
+        print(string, file=f)
+        print(' ', file=f)

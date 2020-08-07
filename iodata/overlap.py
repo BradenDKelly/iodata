@@ -72,7 +72,6 @@ def compute_overlap(obasis: MolecularBasis, atcoords: np.ndarray) -> np.ndarray:
 
     # Loop over shell0
     begin0 = 0
-    count = 0
     total = 0
     for i0, shell0 in enumerate(obasis.shells):
         r0 = atcoords[shell0.icenter]
@@ -89,16 +88,17 @@ def compute_overlap(obasis: MolecularBasis, atcoords: np.ndarray) -> np.ndarray:
 
             a0 = np.min(shell0.exponents)
             a1 = np.min(shell1.exponents)
-            # arrays of angular momentums [[2, 0, 0], [0, 2, 0], ..., [0, 1, 1]]
-            n0 = np.array(iter_cart_alphabet2(shell0.angmoms[0]))
-            n1 = np.array(iter_cart_alphabet2(shell1.angmoms[0]))
+
             # prepare some constants to save FLOPS later on
             rij = r0 - r1
             rij_norm_sq = np.linalg.norm(rij) ** 2
             prefactor = np.exp(-a0 * a1 * rij_norm_sq / (a0 + a1))
             total += 1
             if prefactor > 1.e-15:
-                count += 1
+                # arrays of angular momentums [[2, 0, 0], [0, 2, 0], ..., [0, 1, 1]]
+                n0 = np.array(iter_cart_alphabet2(shell0.angmoms[0]))
+                n1 = np.array(iter_cart_alphabet2(shell1.angmoms[0]))
+
                 # Loop over primitives in shell0 (Cartesian)
                 for iexp0, (a0, cc0) in enumerate(zip(shell0.exponents, shell0.coeffs[:, 0])):
                     scales0 = scales[i0][iexp0]
@@ -147,7 +147,6 @@ def compute_overlap(obasis: MolecularBasis, atcoords: np.ndarray) -> np.ndarray:
     permutation, signs = convert_conventions(obasis, OVERLAP_CONVENTIONS, reverse=True)
     overlap = overlap[permutation] * signs.reshape(-1, 1)
     overlap = overlap[:, permutation] * signs
-    print("count = ", count, total)
     return overlap
 
 
